@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { parseImport, remainingDays, writeExportBuffer } from './excel';
+import { buildExportFromTemplate, parseImport, remainingDays, writeExportBuffer } from './excel';
 import type { Project } from './types';
+import { DEPARTMENTS } from './types';
 
 async function workbookBuffer(sheets: { name: string; rows: unknown[][] }[]) {
   const workbook = new ExcelJS.Workbook();
@@ -99,5 +100,99 @@ assert.equal(ws!.getCell('A2').value, 463);
   assert.equal(ws!.getCell('I2').value, 5);
   assert.equal((ws!.getCell('H2').value as Date).getFullYear(), 2026);
   assert.equal(ws!.rowCount, 7);
+});
+
+async function buildTemplateBuffer(projectBlocks: number) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('SUIVI PROD');
+  ws.columns = [{ width: 12 }, { width: 30 }, { width: 11 }, { width: 20 }, { width: 14 }, { width: 9 }, { width: 15 }, { width: 15 }, { width: 40 }];
+  const headerRow = ws.addRow(['N° PROJET', 'DESIGNATION PROJET', 'PRIORITE', 'AFFECTATION', 'DEPARTEMENT', 'PHASE', 'DELAI LIVRABLE', 'DATE LIVRABLE', 'COMMENTAIRE']);
+  headerRow.height = 30;
+  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  headerRow.eachCell(c => c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF112233' } });
+
+  for (let b = 0; b < projectBlocks; b++) {
+    for (let i = 0; i < 6; i++) {
+      const row = ws.addRow([
+        i === 0 ? 100 + b : '', i === 0 ? `Ancien projet ${b}` : '', i === 0 ? 'HAUTE' : '', i === 0 ? 'CHEF ANCIEN' : '',
+        DEPARTMENTS[i], '-', '-', '-', i === 0 ? 'commentaire original' : '',
+      ]);
+      row.eachCell(c => c.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } });
+      if (i === 0) row.getCell(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFAABBCC' } };
+    }
+  }
+  return wb.xlsx.writeBuffer();
+}
+
+function blankLignes(): Project['lignes'] {
+  return DEPARTMENTS.map(departement => ({ departement, phase: null, delaiJours: null, dateLivrable: null, commentaire: null }));
+}
+
+test('buildExportFromTemplate preserves template formatting and writes current business data', async () => {
+  const buffer = await buildTemplateBuffer(1);
+  const project: Project = {
+    id: 'p1', numero: 999, intitule: 'Projet Actuel', priorite: 'MOYENNE', chef: 'Nouveau Chef',
+    updatedAt: new Date().toISOString(), updatedBy: 'u1',
+    lignes: DEPARTMENTS.map((departement, i) => ({
+      departement, phase: i === 0 ? 'APD' : null, delaiJours: i === 0 ? 9 : null,
+      dateLivrable: i === 0 ? '2026-11-01' : null, commentaire: i === 0 ? 'Nouveau commentaire' : null,
+    })),
+  };
+
+  const wb = await buildExportFromTemplate(buffer as any, [project]);
+  const ws = wb.getWorksheet('SUIVI PROD')!;
+
+  assert.equal(ws.getRow(1).height, 30);
+  assert.equal(ws.getRow(1).getCell(1).font?.bold, true);
+  assert.equal(ws.getColumn(2).width, 30);
+
+  assert.equal(ws.getCell('A2').value, 999);
+  assert.equal(ws.getCell('B2').value, 'Projet Actuel');
+  assert.equal(ws.getCell('C2').value, 'MOYENNE');
+  assert.equal(ws.getCell('D2').value, 'Nouveau Chef');
+  assert.equal(ws.getCell('G2').value, 9);
+  assert.equal(ws.getCell('I2').value, 'Nouveau commentaire');
+
+  assert.equal((ws.getCell('A2').border as any)?.top?.style, 'thin');
+  assert.equal((ws.getCell('C2').fill as any)?.fgColor?.argb, 'FFAABBCC');
+});
+
+test('buildExportFromTemplate clones block styling for rows appended beyond the original template extent', async () => {
+  const buffer = await buildTemplateBuffer(1);
+  const projects: Project[] = [0, 1].map(n => ({
+    id: `p${n}`, numero: 500 + n, intitule: `Projet ${n}`, priorite: 'HAUTE', chef: null,
+    updatedAt: new Date().toISOString(), updatedBy: 'u1', lignes: blankLignes(),
+  }));
+
+  const wb = await buildExportFromTemplate(buffer as any, projects);
+  const ws = wb.getWorksheet('SUIVI PROD')!;
+
+  assert.equal(ws.getCell('A8').value, 501);
+  assert.equal((ws.getCell('C8').fill as any)?.fgColor?.argb, 'FFAABBCC');
+  assert.equal((ws.getCell('A8').border as any)?.top?.style, 'thin');
+});
+
+test('buildExportFromTemplate clears stale business data left over when fewer projects are exported', async () => {
+  const buffer = await buildTemplateBuffer(2);
+  const project: Project = {
+    id: 'p1', numero: 777, intitule: 'Seul projet restant', priorite: 'BASSE', chef: null,
+    updatedAt: new Date().toISOString(), updatedBy: 'u1', lignes: blankLignes(),
+  };
+
+  const wb = await buildExportFromTemplate(buffer as any, [project]);
+  const ws = wb.getWorksheet('SUIVI PROD')!;
+
+  assert.equal(ws.getCell('A8').value, null);
+  assert.equal(ws.getCell('B8').value, null);
+  assert.equal(ws.getCell('I8').value, null);
+  assert.equal((ws.getCell('A8').border as any)?.top?.style, 'thin');
+});
+
+test('buildExportFromTemplate rejects a template with no recognizable header row, so callers can fall back', async () => {
+  const wb0 = new ExcelJS.Workbook();
+  const ws0 = wb0.addWorksheet('Feuille1');
+  ws0.addRow(['Colonne A', 'Colonne B']);
+  const buffer = await wb0.xlsx.writeBuffer();
+  await assert.rejects(() => buildExportFromTemplate(buffer as any, []));
 });
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { io, type Socket } from 'socket.io-client';
-import { api, getToken, setToken } from './api';
+import { api, apiGetBinary, apiPutBinary, getToken, setToken } from './api';
 import { flushOutbox, outboxCount, queueAction, removeQueuedAction, type QueuedAction } from './offline';
 import type { Manager, Priority, Project, User } from './types';
 import LoginView from './components/LoginView.vue';
@@ -88,20 +88,16 @@ async function restore(){
 }
 
 const rows=computed(()=>{
-  const out:{project:Project;line:Project['lignes'][number];firstVisible:boolean;order:number}[]=[];
+  const out:{project:Project;line:Project['lignes'][number];firstVisible:boolean}[]=[];
   const q=search.value.trim().toLocaleLowerCase('fr');
-  projects.value.forEach((p,order)=>{
+  projects.value.forEach(p=>{
     if(priorities.value.length&&(!p.priorite||!priorities.value.includes(p.priorite)))return;
     if(chef.value&&p.chef!==chef.value)return;
     if(q&&!`${p.numero} ${p.intitule}`.toLocaleLowerCase('fr').includes(q))return;
     const lines=p.lignes.filter(l=>!department.value||l.departement===department.value);
-    lines.forEach((line,i)=>out.push({project:p,line,firstVisible:i===0,order}));
+    lines.forEach((line,i)=>out.push({project:p,line,firstVisible:i===0}));
   });
-  const rank:Record<string,number>={HAUTE:0,MOYENNE:1,BASSE:2,NONE:3};
-  return out.sort((a,b)=>{
-    const diff=rank[a.project.priorite??'NONE']-rank[b.project.priorite??'NONE'];
-    return diff||a.order-b.order;
-  });
+  return out;
 });
 
 function openProject(p:Project){selected.value=p;panel.value=true}
@@ -167,14 +163,23 @@ async function addManager(name:string){
   catch(e:any){say(e.message,'error')}
 }
 
-async function doImport(payload:any){
-  try{const r=await api<{count:number}>('/projects/import/bulk',{method:'POST',body:JSON.stringify(payload)});importOpen.value=false;await load();await refreshAdminStatus();say(`${r.count} projet(s) importé(s).`,'success')}
-  catch(e:any){say(e.message,'error')}
+async function doImport(payload:{mode:'replace'|'merge';projects:any[];managers:string[];fileBuffer:ArrayBuffer|null;fileName:string}){
+  try{
+    const body={mode:payload.mode,projects:payload.projects,managers:payload.managers};
+    const r=await api<{count:number}>('/projects/import/bulk',{method:'POST',body:JSON.stringify(body)});
+    importOpen.value=false;await load();await refreshAdminStatus();say(`${r.count} projet(s) importé(s).`,'success');
+    if(payload.fileBuffer){
+      apiPutBinary('/excel-template',payload.fileBuffer,payload.fileName).catch(()=>say('Le modèle Excel n’a pas pu être enregistré ; l’export utilisera la mise en forme par défaut.','info'));
+    }
+  }catch(e:any){say(e.message,'error')}
 }
 
 async function doExport(){
-  try{const { exportExcel }=await import('./excel');await exportExcel(projects.value)}
-  catch(e:any){say(e.message??'Export Excel impossible.','error')}
+  try{
+    const { exportExcel }=await import('./excel');
+    const template=await apiGetBinary('/excel-template').catch(()=>null);
+    await exportExcel(projects.value,template);
+  }catch(e:any){say(e.message??'Export Excel impossible.','error')}
 }
 
 async function seed(){
@@ -215,6 +220,6 @@ onBeforeUnmount(()=>{socket?.disconnect();if(timer)clearTimeout(timer);window.re
     <ProjectPanel :open="panel" :project="selected" :managers="managers" :can-edit="canEdit" @close="panel=false" @save="saveProject" @remove="removeProject" @add-manager="addManager"/>
     <ConflictDialog :open="!!conflict" @close="conflict=null" @reload="reloadConflict" @overwrite="overwriteConflict"/>
     <ImportDialog v-if="importOpen" @close="importOpen=false" @import="doImport"/>
-    <UsersAdmin v-if="usersOpen" @close="usersOpen=false"/>
+    <UsersAdmin v-if="usersOpen" :current-user-id="user.id" @close="usersOpen=false"/>
   </div>
 </template>

@@ -11,8 +11,11 @@ const projects:[string,number,string,Priority][]=[
 ];
 export async function seedBusinessData(userId:string){
   for(const name of managers) await prisma.manager.upsert({where:{normalized:normalizeManager(name)},update:{},create:{name,normalized:normalizeManager(name)}});
+  const orderCounters=new Map<Priority,number>();
   for(const [chef,numero,intitule,priorite] of projects){
-    await prisma.project.create({data:{chef,numero,intitule,priorite,updatedBy:userId,lignes:{create:DEPARTMENTS.map(departement=>({departement}))}}});
+    const priorityOrder=(orderCounters.get(priorite)??-1)+1;
+    orderCounters.set(priorite,priorityOrder);
+    await prisma.project.create({data:{chef,numero,intitule,priorite,priorityOrder,updatedBy:userId,lignes:{create:DEPARTMENTS.map(departement=>({departement}))}}});
   }
   return projects.length;
 }

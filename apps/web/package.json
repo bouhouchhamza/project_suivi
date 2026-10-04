@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
+    "dev": "node init && vite",
+    "build": "node init && vue-tsc --noEmit -p tsconfig.app.json && vite build",
     "preview": "vite preview",
     "test": "tsx --test src/**/*.test.ts"
   },

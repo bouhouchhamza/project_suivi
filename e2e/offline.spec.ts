@@ -68,7 +68,7 @@ async function ensureEditor(
 
   if (editor.role !== 'editor') {
     const changed = await request.patch(
-      `${BASE_URL}/api/users/${editor.id}/role`,
+      `${BASE_URL}/api/users/${editor.id}`,
       {
         headers,
         data: { role: 'editor' },
