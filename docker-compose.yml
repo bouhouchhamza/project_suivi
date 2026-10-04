@@ -1,0 +1,74 @@
+﻿services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: suivi_projets
+      POSTGRES_USER: suivi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-suivi}
+    volumes:
+      - suivi-postgres:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U suivi -d suivi_projets"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: ./apps/api
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://suivi:${POSTGRES_PASSWORD:-suivi}@db:5432/suivi_projets?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: ./apps/api
+      target: runtime
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: postgresql://suivi:${POSTGRES_PASSWORD:-suivi}@db:5432/suivi_projets?schema=public
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
+      PORT: 4000
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrateur}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@suivi.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ChangeMe123!}
+      AUTO_SEED_PROJECTS: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        VITE_API_URL: /api
+        VITE_SOCKET_URL: ""
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  suivi-postgres:
