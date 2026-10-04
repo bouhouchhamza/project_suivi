@@ -1,0 +1,24 @@
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import { config } from './config.js';
+import { authRouter } from './routes/auth.js';
+import { projectsRouter } from './routes/projects.js';
+import { managersRouter } from './routes/managers.js';
+import { usersRouter } from './routes/users.js';
+import { adminRouter } from './routes/admin.js';
+
+export const app=express();
+app.use(helmet());
+app.use(cors({origin:config.corsOrigin,credentials:false}));
+app.use(express.json({limit:'5mb'}));
+app.use(morgan('dev'));
+app.get('/api/health',(_req,res)=>res.json({success:true,message:'Suivi des Projets API is running'}));
+app.use('/api/auth',authRouter);
+app.use('/api/projects',projectsRouter);
+app.use('/api/managers',managersRouter);
+app.use('/api/users',usersRouter);
+app.use('/api/admin',adminRouter);
+app.use((_req,res)=>res.status(404).json({message:'Route introuvable.'}));
+app.use((err:any,_req:any,res:any,_next:any)=>{console.error(err);res.status(500).json({message:'Erreur interne du serveur.'});});

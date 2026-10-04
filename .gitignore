@@ -1,0 +1,15 @@
+node_modules
+.env
+.env.*
+!.env.example
+dist
+.vite
+*.tsbuildinfo
+*.log
+.DS_Store
+backups/
+playwright-report/
+test-results/
+*.before-security
+docker-compose.before-runtime-cleanup.yml
+apps/api/Dockerfile.before-runtime-cleanup
