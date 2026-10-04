@@ -8,6 +8,7 @@ import { projectsRouter } from './routes/projects.js';
 import { managersRouter } from './routes/managers.js';
 import { usersRouter } from './routes/users.js';
 import { adminRouter } from './routes/admin.js';
+import { excelTemplateRouter } from './routes/excelTemplate.js';
 
 export const app=express();
 app.use(helmet());
@@ -20,5 +21,6 @@ app.use('/api/projects',projectsRouter);
 app.use('/api/managers',managersRouter);
 app.use('/api/users',usersRouter);
 app.use('/api/admin',adminRouter);
+app.use('/api/excel-template',excelTemplateRouter);
 app.use((_req,res)=>res.status(404).json({message:'Route introuvable.'}));
 app.use((err:any,_req:any,res:any,_next:any)=>{console.error(err);res.status(500).json({message:'Erreur interne du serveur.'});});

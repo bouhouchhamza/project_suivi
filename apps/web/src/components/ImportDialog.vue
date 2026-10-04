@@ -1,18 +1,26 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
-const emit=defineEmits<{close:[];import:[{mode:'replace'|'merge';projects:any[];managers:string[]}]}>();
+const emit=defineEmits<{close:[];import:[{mode:'replace'|'merge';projects:any[];managers:string[];fileBuffer:ArrayBuffer|null;fileName:string}]}>();
 const mode=ref<'replace'|'merge'>('merge');
 const payload=ref<any>(null);
+const fileBuffer=ref<ArrayBuffer|null>(null);
+const fileName=ref('');
 const error=ref('');
 const confirmReplace=ref(false);
 let opener:HTMLElement|null=null;
 async function pick(e:Event){
-  error.value=''; payload.value=null;
+  error.value=''; payload.value=null; fileBuffer.value=null; fileName.value='';
   const f=(e.target as HTMLInputElement).files?.[0]; if(!f)return;
-  try{const { parseImport }=await import('../excel');payload.value=await parseImport(await f.arrayBuffer())}catch(err:any){error.value=err.message}
+  try{
+    const buf=await f.arrayBuffer();
+    const { parseImport }=await import('../excel');
+    payload.value=await parseImport(buf);
+    fileBuffer.value=buf;
+    fileName.value=f.name;
+  }catch(err:any){error.value=err.message}
 }
 function go(){if(!payload.value)return;if(mode.value==='replace'){confirmReplace.value=true;return}submit()}
-function submit(){if(payload.value)emit('import',{mode:mode.value,...payload.value})}
+function submit(){if(payload.value)emit('import',{mode:mode.value,projects:payload.value.projects,managers:payload.value.managers,fileBuffer:fileBuffer.value,fileName:fileName.value})}
 function closeDialog(){emit('close');setTimeout(()=>opener?.focus(),0)}
 function keydown(e:KeyboardEvent){if(e.key==='Escape'){if(confirmReplace.value)confirmReplace.value=false;else closeDialog()}}
 onMounted(()=>{opener=document.activeElement as HTMLElement|null;window.addEventListener('keydown',keydown)});onBeforeUnmount(()=>window.removeEventListener('keydown',keydown));

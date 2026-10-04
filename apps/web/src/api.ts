@@ -59,3 +59,30 @@ export async function login(email: string, password: string) {
     body: JSON.stringify({ email, password }),
   });
 }
+
+export async function apiGetBinary(path: string): Promise<{ buffer: ArrayBuffer; filename: string } | null> {
+  const res = await fetch(`${API}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw Object.assign(new Error('Erreur API'), { status: res.status });
+  const header = res.headers.get('X-Template-Filename');
+  const filename = header ? decodeURIComponent(header) : 'template.xlsx';
+  return { buffer: await res.arrayBuffer(), filename };
+}
+
+export async function apiPutBinary(path: string, buffer: ArrayBuffer, filename: string) {
+  const res = await fetch(`${API}${path}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'X-Template-Filename': encodeURIComponent(filename),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: buffer,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(data.message ?? 'Erreur API'), { status: res.status, data });
+  }
+}
