@@ -1,0 +1,12 @@
+import '../src/load-env.js';
+import bcrypt from 'bcryptjs';
+import { PrismaClient, Role } from '@prisma/client';
+import { seedBusinessData } from '../src/seed-data.js';
+const prisma = new PrismaClient();
+const email = (process.env.ADMIN_EMAIL ?? 'admin@suivi.local').toLowerCase();
+const password = process.env.ADMIN_PASSWORD ?? 'ChangeMe123!';
+const name = process.env.ADMIN_NAME ?? 'Administrateur';
+const admin = await prisma.user.upsert({where:{email},update:{},create:{email,name,role:Role.admin,passwordHash:await bcrypt.hash(password,12)}});
+if (await prisma.project.count() === 0) await seedBusinessData(admin.id);
+console.log(`Seed OK. Admin: ${email}`);
+await prisma.$disconnect();

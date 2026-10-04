@@ -1,0 +1,25 @@
+{
+  "name": "suivi-projets",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "apps/api"
+  ],
+  "scripts": {
+    "dev": "node init && concurrently -n api,web -c auto \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
+    "build": "node init && npm run build -w apps/api && npm run build -w apps/web",
+    "db:generate": "npm run db:generate -w apps/api",
+    "db:migrate": "npm run db:migrate -w apps/api",
+    "db:deploy": "npm run db:deploy -w apps/api",
+    "db:seed": "npm run db:seed -w apps/api",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "concurrently": "^9.1.2",
+    "dotenv": "^8.2.0",
+    "node-fetch": "^3.3.2"
+  }
+}

@@ -1,0 +1,1 @@
+<script setup lang="ts">defineProps<{message:string;kind:'info'|'success'|'error'}>();defineEmits(['close']);</script><template><div v-if="message" class="banner" :class="kind"><span>{{message}}</span><button @click="$emit('close')" aria-label="Fermer">×</button></div></template>

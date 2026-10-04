@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  editor
+  viewer
+}
+
+enum Priority {
+  HAUTE
+  MOYENNE
+  BASSE
+}
+
+enum Phase {
+  APS
+  APD
+  DCE
+  EXE
+}
+
+enum Department {
+  STR
+  ECO
+  FLU
+  ELEC
+  VRD
+  BIM
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Project {
+  id        String        @id @default(uuid())
+  numero    Int
+  intitule  String        @db.VarChar(200)
+  priorite  Priority?
+  chef      String?
+  updatedBy String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  lignes    ProjectLine[]
+
+  @@index([numero])
+  @@index([chef])
+}
+
+model ProjectLine {
+  id           String     @id @default(uuid())
+  departement  Department
+  phase        Phase?
+  delaiJours   Int?
+  dateLivrable DateTime?  @db.Date
+  commentaire  String?    @db.VarChar(2000)
+  projectId    String
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, departement])
+}
+
+model Manager {
+  id         String   @id @default(uuid())
+  name       String
+  normalized String   @unique
+  createdAt  DateTime @default(now())
+}
