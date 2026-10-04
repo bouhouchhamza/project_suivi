@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Department, Phase, Priority } from '@prisma/client';
-import { DEPARTMENTS, isDateOnly, normalizeManager, projectSchema, sameImportProjectKey } from '../src/domain.js';
+import { Department, Phase, Priority, Role } from '@prisma/client';
+import { DEPARTMENTS, isDateOnly, normalizeManager, projectSchema, sameImportProjectKey, wouldRemoveLastAdmin } from '../src/domain.js';
 import { loginThrottleForTest } from '../src/routes/auth.js';
 
 const validProject = () => ({
@@ -70,6 +70,21 @@ test('import merge key uses numero plus normalized title and allows duplicate nu
     { numero: 463, intitule: 'CHU' },
     { numero: 436, intitule: 'CHU' },
   ), false);
+});
+
+test('wouldRemoveLastAdmin rejects demoting or deleting the sole remaining admin', () => {
+  assert.equal(wouldRemoveLastAdmin(Role.admin, Role.viewer, 1), true);
+  assert.equal(wouldRemoveLastAdmin(Role.admin, null, 1), true);
+});
+
+test('wouldRemoveLastAdmin allows role change when other admins remain', () => {
+  assert.equal(wouldRemoveLastAdmin(Role.admin, Role.viewer, 2), false);
+  assert.equal(wouldRemoveLastAdmin(Role.admin, null, 2), false);
+});
+
+test('wouldRemoveLastAdmin ignores non-admins and no-op role changes', () => {
+  assert.equal(wouldRemoveLastAdmin(Role.viewer, null, 1), false);
+  assert.equal(wouldRemoveLastAdmin(Role.admin, Role.admin, 1), false);
 });
 
 test('login throttle resets and prunes bounded in-memory failure state', () => {

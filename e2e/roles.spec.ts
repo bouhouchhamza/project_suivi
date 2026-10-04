@@ -73,7 +73,7 @@ async function ensureUser(
 
   if (existing.role !== user.role) {
     const changed = await request.patch(
-      `${BASE_URL}/api/users/${existing.id}/role`,
+      `${BASE_URL}/api/users/${existing.id}`,
       {
         headers,
         data: { role: user.role },

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Prisma, Role } from '@prisma/client';
+import { Prisma, Priority, Role } from '@prisma/client';
 import { z } from 'zod';
 import { allowRoles, requireAuth } from '../auth.js';
 import { prisma } from '../db.js';
@@ -10,13 +10,19 @@ export const projectsRouter = Router();
 projectsRouter.use(requireAuth, allowRoles(Role.admin, Role.editor, Role.viewer));
 const include = { lignes: true } as const;
 const routeId = (id: string | string[] | undefined) => Array.isArray(id) ? id[0] : id;
+const listOrder: Prisma.ProjectOrderByWithRelationInput[] = [{ priorite: 'asc' }, { priorityOrder: 'asc' }];
 
 class ProjectConflict extends Error {
   constructor(public serverProject: any) { super('PROJECT_CONFLICT'); }
 }
 
+async function nextPriorityOrder(tx: Prisma.TransactionClient, priorite: Priority | null) {
+  const agg = await tx.project.aggregate({ where: { priorite }, _max: { priorityOrder: true } });
+  return (agg._max.priorityOrder ?? -1) + 1;
+}
+
 projectsRouter.get('/', async (_req,res) => {
-  const data = await prisma.project.findMany({ include, orderBy:{createdAt:'asc'} });
+  const data = await prisma.project.findMany({ include, orderBy:listOrder });
   res.json({data:data.map(serializeProject)});
 });
 
@@ -24,22 +30,28 @@ projectsRouter.post('/', allowRoles(Role.admin,Role.editor), async (req,res) => 
   const parsed = projectSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({message:'Projet invalide.',errors:parsed.error.flatten()});
   const p = parsed.data;
-  const project = await prisma.$transaction(async tx => {
-    if (p.chef) {
-      const normalized = normalizeManager(p.chef);
-      await tx.manager.upsert({where:{normalized},update:{},create:{name:p.chef,normalized}});
-    }
-    return tx.project.create({
-      data:{
-        numero:p.numero,intitule:p.intitule,priorite:p.priorite,chef:p.chef,updatedBy:req.user!.id,
-        lignes:{create:p.lignes.map(l=>({...l,dateLivrable:toDate(l.dateLivrable)}))}
-      },
-      include
-    });
-  });
-  const out = serializeProject(project);
-  io?.emit('project:created', out);
-  res.status(201).json({data:out});
+  try {
+    const project = await prisma.$transaction(async tx => {
+      if (p.chef) {
+        const normalized = normalizeManager(p.chef);
+        await tx.manager.upsert({where:{normalized},update:{},create:{name:p.chef,normalized}});
+      }
+      const priorityOrder = await nextPriorityOrder(tx, p.priorite);
+      return tx.project.create({
+        data:{
+          numero:p.numero,intitule:p.intitule,priorite:p.priorite,priorityOrder,chef:p.chef,updatedBy:req.user!.id,
+          lignes:{create:p.lignes.map(l=>({...l,dateLivrable:toDate(l.dateLivrable)}))}
+        },
+        include
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    const out = serializeProject(project);
+    io?.emit('project:created', out);
+    res.status(201).json({data:out});
+  } catch (e:any) {
+    if (e?.code === 'P2034') return res.status(409).json({message:'Conflit de création. Veuillez réessayer.'});
+    throw e;
+  }
 });
 
 projectsRouter.put('/:id', allowRoles(Role.admin,Role.editor), async (req,res) => {
@@ -59,10 +71,13 @@ projectsRouter.put('/:id', allowRoles(Role.admin,Role.editor), async (req,res) =
         await tx.manager.upsert({where:{normalized},update:{},create:{name:p.chef,normalized}});
       }
 
+      const priorityChanged = current.priorite !== p.priorite;
+      const priorityOrder = priorityChanged ? await nextPriorityOrder(tx, p.priorite) : undefined;
+
       if (!body.data.force) {
         const claim = await tx.project.updateMany({
           where:{id,updatedAt:new Date(body.data.baseUpdatedAt)},
-          data:{numero:p.numero,intitule:p.intitule,priorite:p.priorite,chef:p.chef,updatedBy:req.user!.id,updatedAt:new Date()}
+          data:{numero:p.numero,intitule:p.intitule,priorite:p.priorite,...(priorityOrder!==undefined?{priorityOrder}:{}),chef:p.chef,updatedBy:req.user!.id,updatedAt:new Date()}
         });
         if (claim.count !== 1) {
           const latest = await tx.project.findUnique({where:{id},include});
@@ -70,7 +85,7 @@ projectsRouter.put('/:id', allowRoles(Role.admin,Role.editor), async (req,res) =
           throw new ProjectConflict(serializeProject(latest));
         }
       } else {
-        await tx.project.update({where:{id},data:{numero:p.numero,intitule:p.intitule,priorite:p.priorite,chef:p.chef,updatedBy:req.user!.id,updatedAt:new Date()}});
+        await tx.project.update({where:{id},data:{numero:p.numero,intitule:p.intitule,priorite:p.priorite,...(priorityOrder!==undefined?{priorityOrder}:{}),chef:p.chef,updatedBy:req.user!.id,updatedAt:new Date()}});
       }
 
       await tx.projectLine.deleteMany({where:{projectId:id}});
@@ -134,23 +149,38 @@ projectsRouter.post('/import/bulk', allowRoles(Role.admin,Role.editor), async (r
     }
     if (parsed.data.mode === 'replace') await tx.project.deleteMany();
 
+    const orderKey = (pr: Priority | null) => pr ?? 'NONE';
+    const orderCounters = new Map<string, number>();
+    for (const pr of [Priority.HAUTE, Priority.MOYENNE, Priority.BASSE, null]) {
+      const agg = await tx.project.aggregate({ where:{priorite:pr}, _max:{priorityOrder:true} });
+      orderCounters.set(orderKey(pr), agg._max.priorityOrder ?? -1);
+    }
+    const nextOrder = (pr: Priority | null) => {
+      const key = orderKey(pr);
+      const value = (orderCounters.get(key) ?? -1) + 1;
+      orderCounters.set(key, value);
+      return value;
+    };
+
     let processed = 0;
     for (const p of parsed.data.projects) {
       if (p.chef) {
         const normalized = normalizeManager(p.chef);
         await tx.manager.upsert({where:{normalized},update:{},create:{name:p.chef,normalized}});
       }
-      let existingId: string | null = null;
+      let existing: { id: string; priorite: Priority | null } | null = null;
       if (parsed.data.mode === 'merge') {
-        const sameNumero = await tx.project.findMany({where:{numero:p.numero},select:{id:true,numero:true,intitule:true}});
-        existingId = sameNumero.find(x=>sameImportProjectKey(x,p))?.id ?? null;
+        const sameNumero = await tx.project.findMany({where:{numero:p.numero},select:{id:true,numero:true,intitule:true,priorite:true}});
+        existing = sameNumero.find(x=>sameImportProjectKey(x,p)) ?? null;
       }
-      if (existingId) {
-        await tx.project.update({where:{id:existingId},data:{intitule:p.intitule,priorite:p.priorite,chef:p.chef,updatedBy:req.user!.id,updatedAt:new Date()}});
-        await tx.projectLine.deleteMany({where:{projectId:existingId}});
-        await tx.projectLine.createMany({data:p.lignes.map(l=>({projectId:existingId,departement:l.departement,phase:l.phase,delaiJours:l.delaiJours,dateLivrable:toDate(l.dateLivrable),commentaire:l.commentaire}))});
+      if (existing) {
+        const priorityOrder = existing.priorite === p.priorite ? undefined : nextOrder(p.priorite);
+        await tx.project.update({where:{id:existing.id},data:{intitule:p.intitule,priorite:p.priorite,...(priorityOrder!==undefined?{priorityOrder}:{}),chef:p.chef,updatedBy:req.user!.id,updatedAt:new Date()}});
+        await tx.projectLine.deleteMany({where:{projectId:existing.id}});
+        await tx.projectLine.createMany({data:p.lignes.map(l=>({projectId:existing!.id,departement:l.departement,phase:l.phase,delaiJours:l.delaiJours,dateLivrable:toDate(l.dateLivrable),commentaire:l.commentaire}))});
       } else {
-        await tx.project.create({data:{numero:p.numero,intitule:p.intitule,priorite:p.priorite,chef:p.chef,updatedBy:req.user!.id,lignes:{create:p.lignes.map(l=>({...l,dateLivrable:toDate(l.dateLivrable)}))}}});
+        const priorityOrder = nextOrder(p.priorite);
+        await tx.project.create({data:{numero:p.numero,intitule:p.intitule,priorite:p.priorite,priorityOrder,chef:p.chef,updatedBy:req.user!.id,lignes:{create:p.lignes.map(l=>({...l,dateLivrable:toDate(l.dateLivrable)}))}}});
       }
       processed++;
     }

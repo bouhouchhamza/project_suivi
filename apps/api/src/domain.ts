@@ -1,4 +1,4 @@
-import { Department, Phase, Priority } from '@prisma/client';
+import { Department, Phase, Priority, Role } from '@prisma/client';
 import { z } from 'zod';
 
 export const DEPARTMENTS: Department[] = ['STR','ECO','FLU','ELEC','VRD','BIM'];
@@ -38,6 +38,12 @@ export const projectSchema = z.object({
     ctx.addIssue({ code: 'custom', path: ['lignes'], message: 'Les 6 départements doivent être présents dans l’ordre STR, ECO, FLU, ELEC, VRD, BIM.' });
   }
 });
+
+export function wouldRemoveLastAdmin(currentRole: Role | null, nextRole: Role | null, adminCount: number) {
+  if (currentRole !== Role.admin) return false;
+  if (nextRole === Role.admin) return false;
+  return adminCount <= 1;
+}
 
 export const normalizeManager = (name: string) => name.trim().replace(/\s+/g, ' ').toLocaleUpperCase('fr');
 export const normalizeTitle = (name: string) => name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('fr');
