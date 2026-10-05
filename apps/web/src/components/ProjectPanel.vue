@@ -62,18 +62,18 @@ onBeforeUnmount(()=>window.removeEventListener('keydown',keydown));
         <p v-if="attempted&&!valid" class="field-error" role="alert">Le numéro et l’intitulé sont obligatoires.</p>
       </div>
       <footer v-if="canEdit">
-        <button v-if="project" class="btn danger-btn" @click="requestDelete">Supprimer le projet</button><span></span>
+        <button v-if="project" class="btn danger-btn" @click="requestDelete">Archiver le projet</button><span></span>
         <button class="btn primary" :disabled="!valid" @click="save">Enregistrer</button>
       </footer>
     </aside>
     <div v-if="confirmMode" class="modal-backdrop nested" @mousedown.self="confirmMode=null">
       <div class="dialog" role="alertdialog" aria-modal="true">
-        <h2>{{confirmMode==='delete'?'Supprimer le projet ?':'Modifications non enregistrées'}}</h2>
-        <p v-if="confirmMode==='delete'">Supprimer définitivement ce projet et ses lignes ?</p>
+        <h2>{{confirmMode==='delete'?'Archiver le projet ?':'Modifications non enregistrées'}}</h2>
+        <p v-if="confirmMode==='delete'">Le projet sera déplacé dans les archives et pourra être restauré par un administrateur.</p>
         <p v-else>Des modifications ne sont pas enregistrées. Voulez-vous fermer sans enregistrer ?</p>
         <div class="dialog-actions">
           <button class="btn" @click="confirmMode=null">Annuler</button>
-          <button v-if="confirmMode==='delete'" class="btn danger-btn" @click="confirmDelete">Supprimer définitivement</button>
+          <button v-if="confirmMode==='delete'" class="btn danger-btn" @click="confirmDelete">Archiver</button>
           <button v-else class="btn danger-btn" @click="confirmClose">Fermer sans enregistrer</button>
         </div>
       </div>

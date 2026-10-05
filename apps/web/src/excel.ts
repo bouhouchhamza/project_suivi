@@ -47,6 +47,34 @@ function findHeader(headers: unknown[], needle: string, exact = false) {
   });
 }
 
+interface ColumnMap {
+  numero: number; intitule: number; priorite: number; chef: number;
+  dep: number; phase: number; delai: number; date: number; comment: number;
+}
+
+function locateHeader(rows: unknown[][]): { headerIndex: number; cols: ColumnMap } {
+  for (let i = 0; i < Math.min(rows.length, 30); i++) {
+    const h = rows[i];
+    const candidate: ColumnMap = {
+      numero: findHeader(h, 'N'),
+      intitule: findHeader(h, 'DESIGNATION'),
+      priorite: findHeader(h, 'PRIORITE'),
+      chef: findHeader(h, 'AFFECTATION'),
+      dep: findHeader(h, 'DEPARTEMENT'),
+      phase: findHeader(h, 'PHASE', true),
+      delai: findHeader(h, 'DELAI LIVRABLE'),
+      date: findHeader(h, 'DATE LIVRABLE'),
+      comment: findHeader(h, 'COMMENT'),
+    };
+    if (Object.values(candidate).every(v => Number(v) >= 0)) return { headerIndex: i, cols: candidate };
+  }
+  return { headerIndex: -1, cols: {} as ColumnMap };
+}
+
+function findSuiviSheet(wb: ExcelJS.Workbook) {
+  return wb.worksheets.find(sheet => sheet.name.toLocaleUpperCase('fr').includes('SUIVI')) ?? wb.worksheets[0];
+}
+
 function worksheetRows(ws: ExcelJS.Worksheet) {
   const rows: unknown[][] = [];
   const rowCount = ws.actualRowCount || ws.rowCount;
@@ -65,31 +93,11 @@ function worksheetRows(ws: ExcelJS.Worksheet) {
 export async function parseImport(file: ArrayBuffer) {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(file);
-  const ws = wb.worksheets.find(sheet => sheet.name.toLocaleUpperCase('fr').includes('SUIVI')) ?? wb.worksheets[0];
+  const ws = findSuiviSheet(wb);
   if (!ws) throw new Error('Le classeur Excel ne contient aucune feuille.');
   const rows = worksheetRows(ws);
 
-  let headerIndex = -1;
-  let cols: Record<string, number> = {};
-  for (let i = 0; i < Math.min(rows.length, 30); i++) {
-    const h = rows[i];
-    const candidate = {
-      numero: findHeader(h, 'N'),
-      intitule: findHeader(h, 'DESIGNATION'),
-      priorite: findHeader(h, 'PRIORITE'),
-      chef: findHeader(h, 'AFFECTATION'),
-      dep: findHeader(h, 'DEPARTEMENT'),
-      phase: findHeader(h, 'PHASE', true),
-      delai: findHeader(h, 'DELAI LIVRABLE'),
-      date: findHeader(h, 'DATE LIVRABLE'),
-      comment: findHeader(h, 'COMMENT'),
-    };
-    if (Object.values(candidate).every(v => Number(v) >= 0)) {
-      headerIndex = i;
-      cols = candidate;
-      break;
-    }
-  }
+  const { headerIndex, cols } = locateHeader(rows);
   if (headerIndex < 0) {
     throw new Error('Colonnes Excel introuvables. Verifiez N°, DESIGNATION, PRIORITE, AFFECTATION, DEPARTEMENT, PHASE, DELAI LIVRABLE, DATE LIVRABLE et COMMENTAIRE.');
   }
@@ -224,7 +232,82 @@ export async function writeExportBuffer(projects: Project[], today = new Date())
   return buildExportWorkbook(projects, today).xlsx.writeBuffer();
 }
 
-export async function exportExcel(projects: Project[]) {
-  const buf = await writeExportBuffer(projects);
+function cellStyleSnapshot(cell: ExcelJS.Cell) {
+  return { ...cell.style };
+}
+
+export async function buildExportFromTemplate(templateBuffer: ArrayBuffer, projects: Project[]) {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(templateBuffer);
+  const ws = findSuiviSheet(wb);
+  if (!ws) throw new Error('Le modèle Excel ne contient aucune feuille.');
+  const rows = worksheetRows(ws);
+  const { headerIndex, cols } = locateHeader(rows);
+  if (headerIndex < 0) throw new Error('Colonnes du modèle Excel introuvables.');
+
+  const dataColumns = [cols.numero, cols.intitule, cols.priorite, cols.chef, cols.dep, cols.phase, cols.delai, cols.date, cols.comment];
+  const columnCount = Math.max(ws.actualColumnCount || ws.columnCount, ...dataColumns.map(c => c + 1));
+  const firstDataRow = headerIndex + 2;
+  const originalLastRow = ws.actualRowCount || ws.rowCount;
+
+  const blockStyles = Array.from({ length: 6 }, (_, i) => {
+    const sourceRowNumber = Math.min(firstDataRow + i, Math.max(originalLastRow, firstDataRow));
+    const sourceRow = ws.getRow(sourceRowNumber);
+    const cells = Array.from({ length: columnCount }, (_, c) => cellStyleSnapshot(sourceRow.getCell(c + 1)));
+    return { height: sourceRow.height, cells };
+  });
+
+  let cursor = firstDataRow;
+  for (const p of projects) {
+    for (let i = 0; i < 6; i++) {
+      const l = p.lignes[i];
+      const row = ws.getRow(cursor);
+      if (cursor > originalLastRow) {
+        row.height = blockStyles[i].height;
+        blockStyles[i].cells.forEach((style, idx) => { row.getCell(idx + 1).style = { ...style }; });
+      }
+      if (i === 0) {
+        if (cols.numero >= 0) row.getCell(cols.numero + 1).value = p.numero;
+        if (cols.intitule >= 0) row.getCell(cols.intitule + 1).value = p.intitule;
+        if (cols.priorite >= 0) row.getCell(cols.priorite + 1).value = p.priorite ?? '';
+        if (cols.chef >= 0) row.getCell(cols.chef + 1).value = p.chef ?? '';
+      }
+      if (cols.dep >= 0) row.getCell(cols.dep + 1).value = l.departement;
+      if (cols.phase >= 0) row.getCell(cols.phase + 1).value = l.phase ?? '-';
+      if (cols.delai >= 0) row.getCell(cols.delai + 1).value = l.delaiJours ?? '-';
+      if (cols.date >= 0) {
+        const cell = row.getCell(cols.date + 1);
+        if (l.dateLivrable) {
+          cell.value = asLocalDate(l.dateLivrable);
+          if (!cell.numFmt) cell.numFmt = 'dd/mm/yyyy';
+        } else {
+          cell.value = '-';
+        }
+      }
+      if (cols.comment >= 0) row.getCell(cols.comment + 1).value = l.commentaire ?? '';
+      cursor++;
+    }
+  }
+
+  for (let rn = cursor; rn <= originalLastRow; rn++) {
+    const row = ws.getRow(rn);
+    dataColumns.filter(c => c >= 0).forEach(c => { row.getCell(c + 1).value = null; });
+  }
+
+  return wb;
+}
+
+export async function exportExcel(projects: Project[], template?: { buffer: ArrayBuffer; filename: string } | null) {
+  let wb: ExcelJS.Workbook;
+  if (template) {
+    try {
+      wb = await buildExportFromTemplate(template.buffer, projects);
+    } catch {
+      wb = buildExportWorkbook(projects);
+    }
+  } else {
+    wb = buildExportWorkbook(projects);
+  }
+  const buf = await wb.xlsx.writeBuffer();
   saveAs(new Blob([buf]), `Suivi_Projets_${ymd(new Date())}.xlsx`);
 }
