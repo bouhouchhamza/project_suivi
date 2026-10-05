@@ -125,8 +125,6 @@ test('login + CRUD + realtime + conflict + filters + export', async ({
     const createResponse = await createResponsePromise;
     const createText = await createResponse.text();
 
-    console.log('CREATE STATUS:', createResponse.status());
-    console.log('CREATE BODY:', createText);
 
     expect(createResponse.ok()).toBeTruthy();
 
@@ -252,7 +250,7 @@ test('login + CRUD + realtime + conflict + filters + export', async ({
 
     expect(await download.path()).toBeTruthy();
 
-    // 9. Suppression du projet test
+    // 9. Archivage du projet test
     await pageA
       .locator('tbody tr')
       .filter({ hasText: adminTitle })
@@ -265,23 +263,23 @@ test('login + CRUD + realtime + conflict + filters + export', async ({
 
     await deletePanel
       .getByRole('button', {
-        name: 'Supprimer le projet',
+        name: 'Archiver le projet',
       })
       .click();
 
     const deleteDialog = pageA.getByRole('alertdialog');
 
     await expect(
-      deleteDialog.getByText('Supprimer le projet ?')
+      deleteDialog.getByText('Archiver le projet ?')
     ).toBeVisible();
 
     await deleteDialog
       .getByRole('button', {
-        name: 'Supprimer définitivement',
+        name: 'Archiver',
       })
       .click();
 
-    // Suppression reçue en realtime par B
+    // Archivage reçu en realtime par B: le projet sort de la vue active.
     await expect(
       pageB.getByText(adminTitle, { exact: true })
     ).toHaveCount(0, {

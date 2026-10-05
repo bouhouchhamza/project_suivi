@@ -77,6 +77,24 @@ async function ensureEditor(
 
     expect(changed.ok()).toBeTruthy();
   }
+
+  // Admin-created accounts start with mustChangePassword=true; clear it so the
+  // UI login below reaches the normal app instead of the forced-change gate.
+  const editorLogin = await loginApi(
+    request,
+    EDITOR.email,
+    EDITOR.password
+  );
+
+  if (editorLogin.user?.mustChangePassword) {
+    await request.patch(`${BASE_URL}/api/auth/password`, {
+      headers: { Authorization: `Bearer ${editorLogin.token}` },
+      data: {
+        currentPassword: EDITOR.password,
+        newPassword: EDITOR.password,
+      },
+    });
+  }
 }
 
 async function uiLogin(
