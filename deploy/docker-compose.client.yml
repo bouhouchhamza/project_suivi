@@ -1,0 +1,79 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-suivi_projets}
+      POSTGRES_USER: ${POSTGRES_USER:-suivi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-suivi} -d ${POSTGRES_DB:-suivi_projets}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: ../apps/api
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-suivi}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-suivi_projets}?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: ../apps/api
+      target: runtime
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-suivi}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-suivi_projets}?schema=public
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 4000
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      ADMIN_NAME: ${ADMIN_NAME}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      CLIENT_NAME: ${CLIENT_NAME}
+      CLIENT_SLUG: ${CLIENT_SLUG}
+      APP_DOMAIN: ${APP_DOMAIN}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL}
+      PRIMARY_COLOR: ${PRIMARY_COLOR}
+      COMPANY_LOGO: ${COMPANY_LOGO:-}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Africa/Casablanca}
+      AUTO_SEED_PROJECTS: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ../apps/web
+      args:
+        VITE_API_URL: /api
+        VITE_SOCKET_URL: ""
+    ports:
+      - "${WEB_PORT:-127.0.0.1:18080}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db-data:

@@ -10,6 +10,7 @@ Application collaborative de suivi de projets pour bureau d'etudes.
 - ORM/migrations: Prisma.
 - Excel import/export: ExcelJS. The Excel code is lazy-loaded by the web app.
 - Docker services: `db`, one-shot `migrate`, `api`, `web`.
+- Commercial model: one shared codebase, one dedicated Docker Compose project and PostgreSQL volume per client. No shared-table multi-tenancy.
 
 The final API runtime image is intended to contain `@prisma/client` only. Prisma CLI is used in build/migrate stages, not the runtime stage.
 
@@ -27,11 +28,32 @@ ADMIN_NAME=Administrateur
 ADMIN_EMAIL=admin@suivi.local
 ADMIN_PASSWORD=replace-with-a-strong-bootstrap-password
 CORS_ORIGIN=https://suivi.example.com
+CLIENT_NAME=Suivi des Projets
+CLIENT_SLUG=automateflow
+APP_DOMAIN=automateflow.pro
+SUPPORT_EMAIL=support@automateflow.pro
+PRIMARY_COLOR=#2F6B60
+COMPANY_LOGO=
+APP_TIMEZONE=Africa/Casablanca
 ```
 
 For local testing against the existing Docker volume, `.env` may use `APP_ENV=local` and the existing database password. Changing `POSTGRES_PASSWORD` does not change the password inside an already initialized PostgreSQL volume.
 
 Production startup rejects placeholder or short `JWT_SECRET` values and requires an HTTPS `CORS_ORIGIN` when `APP_ENV=production`.
+
+Public client values such as company name, domain, support email, logo, and primary color may be supplied by environment variables and then managed by an admin in `Paramètres de l'entreprise`. Infrastructure secrets remain environment-only.
+
+## Commercial V1 Features
+
+- Branding and company settings with public/private configuration separation.
+- 12-hour default sessions, 7-day "Rester connecté" sessions, centralized token storage, and expired-session handling.
+- Admin user management with roles, active/inactive status, last login, manual password reset, and self-service password change.
+- Project archiving, admin restore, and strongly confirmed permanent deletion for archived projects.
+- Business audit log for project, user, manager, import, password, and company-setting actions.
+- Management dashboard KPIs for active/archived/high-priority projects and deadline windows.
+- In-app notifications with deduplicated deadline alerts and read/unread state.
+- Per-user saved project views.
+- Management report view with printable/PDF-friendly output.
 
 ## Local Docker Startup
 
@@ -114,6 +136,19 @@ docker compose exec -T db pg_restore -U suivi -d suivi_projets_restore --clean -
 ```
 
 Do not restore destructively over the active database without an explicit rollback window and a fresh backup.
+
+## Dedicated Client Instances
+
+Use the `deploy/` layer for new B2B clients:
+
+```bash
+cp deploy/env.client.example deploy/bureau-atlas.env
+./deploy/deploy-client.sh bureau-atlas atlas.automateflow.pro
+./deploy/backup-client.sh bureau-atlas
+./deploy/check-client.sh bureau-atlas
+```
+
+Each client env file controls an isolated Compose project, database volume, backup directory, branding defaults, and admin bootstrap values. See `deploy/README.md` for restore and operations details.
 
 ## Tests
 

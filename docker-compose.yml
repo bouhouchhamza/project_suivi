@@ -40,6 +40,13 @@
       ADMIN_NAME: ${ADMIN_NAME:-Administrateur}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@suivi.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ChangeMe123!}
+      CLIENT_NAME: ${CLIENT_NAME:-Suivi des Projets}
+      CLIENT_SLUG: ${CLIENT_SLUG:-automateflow}
+      APP_DOMAIN: ${APP_DOMAIN:-automateflow.pro}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support@automateflow.pro}
+      PRIMARY_COLOR: ${PRIMARY_COLOR:-#2F6B60}
+      COMPANY_LOGO: ${COMPANY_LOGO:-}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Africa/Casablanca}
       AUTO_SEED_PROJECTS: "false"
     depends_on:
       db:
