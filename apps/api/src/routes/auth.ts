@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { requireAuth, signToken } from '../auth.js';
+import { recordAudit } from '../audit.js';
 
 export const authRouter = Router();
 const loginFailures = new Map<string, { count: number; resetAt: number }>();
@@ -65,7 +66,7 @@ export const loginThrottleForTest = {
 };
 
 authRouter.post('/login', async (req, res) => {
-  const parsed = z.object({ email: z.string().email(), password: z.string().min(1) }).safeParse(req.body);
+  const parsed = z.object({ email: z.string().email(), password: z.string().min(1), rememberMe: z.boolean().optional() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: 'Email ou mot de passe invalide.' });
   const email = parsed.data.email.toLowerCase();
   const key = loginKey(email, req.ip);
@@ -75,10 +76,30 @@ authRouter.post('/login', async (req, res) => {
     recordLoginFailure(key);
     return res.status(401).json({ message: 'Email ou mot de passe incorrect.' });
   }
+  if (!user.isActive) {
+    recordLoginFailure(key);
+    return res.status(403).json({ message: 'Compte désactivé.' });
+  }
   loginFailures.delete(key);
-  const safe = { id: user.id, name: user.name, email: user.email, role: user.role };
-  res.json({ token: signToken(user), user: safe });
+  const updated = await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+  const safe = { id: updated.id, name: updated.name, email: updated.email, role: updated.role, isActive: updated.isActive, lastLoginAt: updated.lastLoginAt, mustChangePassword: updated.mustChangePassword };
+  res.json({ token: signToken(user, parsed.data.rememberMe), user: safe });
 });
 
 authRouter.get('/me', requireAuth, (req, res) => res.json({ user: req.user }));
+
+authRouter.patch('/password', requireAuth, async (req, res) => {
+  const parsed = z.object({
+    currentPassword: z.string().min(1),
+    newPassword: z.string().min(8, 'Le mot de passe doit contenir au moins 8 caractères.').max(100),
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ message: 'Le mot de passe doit contenir au moins 8 caractères.', errors: parsed.error.flatten() });
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.id } });
+  if (!(await bcrypt.compare(parsed.data.currentPassword, user.passwordHash))) {
+    return res.status(401).json({ message: 'Mot de passe actuel incorrect.' });
+  }
+  await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(parsed.data.newPassword, 12), mustChangePassword: false } });
+  await recordAudit(req.user!, 'password_changed', 'user', user.id, { self: true });
+  res.json({ success: true });
+});
 

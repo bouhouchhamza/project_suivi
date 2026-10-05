@@ -13,8 +13,8 @@ io.use(async (socket, next) => {
   try {
     const token = String(socket.handshake.auth.token ?? '');
     const payload = verifyToken(token);
-    const user = await prisma.user.findUnique({ where:{id:payload.id}, select:{id:true,name:true,email:true,role:true} });
-    if (!user?.role) return next(new Error('unauthorized'));
+    const user = await prisma.user.findUnique({ where:{id:payload.id}, select:{id:true,name:true,email:true,role:true,isActive:true} });
+    if (!user?.role || !user.isActive) return next(new Error('unauthorized'));
     socket.data.user = user;
     next();
   } catch { next(new Error('unauthorized')); }

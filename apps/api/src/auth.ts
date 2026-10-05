@@ -5,7 +5,8 @@ import { config } from './config.js';
 import { prisma } from './db.js';
 
 type TokenPayload = { id: string };
-export const signToken = (user: { id: string }) => jwt.sign({ id: user.id }, config.jwtSecret, { expiresIn: '8h' });
+export const signToken = (user: { id: string }, rememberMe = false) =>
+  jwt.sign({ id: user.id }, config.jwtSecret, { expiresIn: rememberMe ? '7d' : '12h' });
 export function verifyToken(token: string) { return jwt.verify(token, config.jwtSecret) as TokenPayload; }
 
 export const requireAuth: RequestHandler = async (req, res, next) => {
@@ -13,8 +14,9 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
   if (!token) return res.status(401).json({ message: 'Authentification requise.' });
   try {
     const payload = verifyToken(token);
-    const user = await prisma.user.findUnique({ where: { id: payload.id }, select: { id:true,name:true,email:true,role:true } });
+    const user = await prisma.user.findUnique({ where: { id: payload.id }, select: { id:true,name:true,email:true,role:true,isActive:true,lastLoginAt:true,mustChangePassword:true } });
     if (!user) return res.status(401).json({ message: 'Compte introuvable.' });
+    if (!user.isActive) return res.status(401).json({ message: 'Compte désactivé.' });
     req.user = user;
     next();
   } catch {

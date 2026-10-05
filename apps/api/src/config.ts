@@ -10,6 +10,13 @@ const appEnv = process.env.APP_ENV ?? 'local';
 const jwtSecret = required('JWT_SECRET', 'dev-secret-change-me');
 const corsOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
 const adminPassword = process.env.ADMIN_PASSWORD;
+const clientName = process.env.CLIENT_NAME ?? 'Suivi des Projets';
+const clientSlug = process.env.CLIENT_SLUG ?? 'automateflow';
+const appDomain = process.env.APP_DOMAIN ?? 'automateflow.pro';
+const supportEmail = process.env.SUPPORT_EMAIL ?? 'support@automateflow.pro';
+const companyLogo = process.env.COMPANY_LOGO ?? '';
+const primaryColor = process.env.PRIMARY_COLOR ?? '#2F6B60';
+const timezone = process.env.APP_TIMEZONE ?? 'Africa/Casablanca';
 
 if (appEnv === 'production') {
   const insecureJwtSecrets = new Set([
@@ -34,4 +41,13 @@ export const config = {
   port: Number(process.env.PORT ?? 4000),
   jwtSecret,
   corsOrigin,
+  publicClient: {
+    clientName,
+    clientSlug,
+    appDomain,
+    supportEmail,
+    companyLogo,
+    primaryColor,
+    timezone,
+  },
 };

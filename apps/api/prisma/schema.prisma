@@ -36,28 +36,40 @@ enum Department {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  name         String
-  email        String   @unique
-  passwordHash String
-  role         Role?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                 String    @id @default(uuid())
+  name               String
+  email              String    @unique
+  passwordHash       String
+  mustChangePassword Boolean   @default(false)
+  role               Role?
+  isActive           Boolean   @default(true)
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  savedViews    SavedView[]
+  notifications Notification[]
 }
 
 model Project {
-  id        String        @id @default(uuid())
-  numero    Int
-  intitule  String        @db.VarChar(200)
-  priorite  Priority?
-  chef      String?
-  updatedBy String
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  lignes    ProjectLine[]
+  id            String        @id @default(uuid())
+  numero        Int
+  intitule      String        @db.VarChar(200)
+  priorite      Priority?
+  priorityOrder Int           @default(0)
+  chef          String?
+  updatedBy     String
+  archivedAt    DateTime?
+  archivedBy    String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  lignes        ProjectLine[]
+  notifications Notification[]
 
   @@index([numero])
   @@index([chef])
+  @@index([archivedAt])
+  @@index([priorite, priorityOrder])
 }
 
 model ProjectLine {
@@ -78,4 +90,73 @@ model Manager {
   name       String
   normalized String   @unique
   createdAt  DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actorName  String?
+  actorEmail String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
+  @@index([action])
+  @@index([entityType, entityId])
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String   @db.VarChar(160)
+  message    String   @db.VarChar(1000)
+  type       String   @db.VarChar(40)
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dedupeKey  String?
+  readAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt, createdAt])
+  @@index([projectId])
+}
+
+model SavedView {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String   @db.VarChar(120)
+  filters   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model CompanySettings {
+  id           String   @id @default("default")
+  clientName   String   @db.VarChar(160)
+  clientSlug   String   @db.VarChar(80)
+  appDomain    String   @db.VarChar(160)
+  supportEmail String   @db.VarChar(160)
+  companyLogo  String?
+  primaryColor String   @db.VarChar(20)
+  timezone     String   @db.VarChar(80)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model ExcelTemplate {
+  id         String   @id @default(uuid())
+  filename   String
+  content    Bytes
+  uploadedAt DateTime @default(now())
+  uploadedBy String
 }
