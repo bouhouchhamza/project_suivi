@@ -7,8 +7,8 @@
     "apps/api"
   ],
   "scripts": {
-    "dev": "concurrently -n api,web -c auto \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
-    "build": "npm run build -w apps/api && npm run build -w apps/web",
+    "dev": "node init && concurrently -n api,web -c auto \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
+    "build": "node init && npm run build -w apps/api && npm run build -w apps/web",
     "db:generate": "npm run db:generate -w apps/api",
     "db:migrate": "npm run db:migrate -w apps/api",
     "db:deploy": "npm run db:deploy -w apps/api",
@@ -18,6 +18,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "dotenv": "^8.2.0",
+    "node-fetch": "^3.3.2"
   }
 }

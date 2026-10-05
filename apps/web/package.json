@@ -3,12 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
+    "dev": "node init && vite",
+    "build": "node init && vue-tsc --noEmit -p tsconfig.app.json && vite build",
     "preview": "vite preview",
     "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
+    "chart.js": "^4.5.1",
     "exceljs": "4.4.0",
     "file-saver": "^2.0.5",
     "socket.io-client": "^4.8.1",
